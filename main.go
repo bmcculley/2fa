@@ -64,12 +64,18 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"crypto/aes"
+	"crypto/cipher"
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha1"
+	"crypto/sha256"
 	"encoding/base32"
 	"encoding/binary"
+	"encoding/hex"
 	"flag"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"os"
@@ -81,6 +87,7 @@ import (
 	"unicode"
 
 	"github.com/atotto/clipboard"
+	"golang.org/x/crypto/ssh/terminal"
 )
 
 var (
@@ -90,6 +97,7 @@ var (
 	flag7    = flag.Bool("7", false, "generate 7-digit code")
 	flag8    = flag.Bool("8", false, "generate 8-digit code")
 	flagClip = flag.Bool("clip", false, "copy code to the clipboard")
+	passKey  string
 )
 
 func usage() {
@@ -153,7 +161,27 @@ type Key struct {
 
 const counterLen = 20
 
+func getPassword() {
+
+	fmt.Print("Enter Password: ")
+	bytePassword, err := terminal.ReadPassword(0)
+	if err != nil {
+		fmt.Println("\nCouldn't get password")
+	}
+	password := string(bytePassword)
+
+	byteArray := make([]byte, 32)
+
+	s := sha256.Sum256([]byte(password))
+
+	copy(byteArray, s[:])
+
+	passKey = hex.EncodeToString(byteArray)
+	fmt.Println("")
+}
+
 func readKeychain(file string) *Keychain {
+	getPassword()
 	c := &Keychain{
 		file: file,
 		keys: make(map[string]Key),
@@ -180,7 +208,8 @@ func readKeychain(file string) *Keychain {
 			var k Key
 			name := string(f[0])
 			k.digits = int(f[1][0] - '0')
-			raw, err := decodeKey(string(f[2]))
+			getPassword()
+			raw, err := decodeKey(decrypt(string(f[2]), passKey))
 			if err == nil {
 				k.raw = raw
 				if len(f) == 3 {
@@ -246,6 +275,7 @@ func (c *Keychain) add(name string) {
 		log.Fatalf("invalid key: %v", err)
 	}
 
+	text = encrypt(text, passKey)
 	line := fmt.Sprintf("%s %d %s", name, size, text)
 	if *flagHotp {
 		line += " " + strings.Repeat("0", 20)
@@ -353,4 +383,67 @@ func hotp(key []byte, counter uint64, digits int) int {
 
 func totp(key []byte, t time.Time, digits int) int {
 	return hotp(key, uint64(t.UnixNano())/30e9, digits)
+}
+
+func encrypt(stringToEncrypt string, keyString string) (encryptedString string) {
+
+	//Since the key is in string, we need to convert decode it to bytes
+	key, _ := hex.DecodeString(keyString)
+	plaintext := []byte(stringToEncrypt)
+
+	//Create a new Cipher Block from the key
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		panic(err.Error())
+	}
+
+	//Create a new GCM - https://en.wikipedia.org/wiki/Galois/Counter_Mode
+	//https://golang.org/pkg/crypto/cipher/#NewGCM
+	aesGCM, err := cipher.NewGCM(block)
+	if err != nil {
+		panic(err.Error())
+	}
+
+	//Create a nonce. Nonce should be from GCM
+	nonce := make([]byte, aesGCM.NonceSize())
+	if _, err = io.ReadFull(rand.Reader, nonce); err != nil {
+		panic(err.Error())
+	}
+
+	//Encrypt the data using aesGCM.Seal
+	//Since we don't want to save the nonce somewhere else in this case, we add it as a prefix to the encrypted data. The first nonce argument in Seal is the prefix.
+	ciphertext := aesGCM.Seal(nonce, nonce, plaintext, nil)
+	return fmt.Sprintf("%x", ciphertext)
+}
+
+func decrypt(encryptedString string, keyString string) (decryptedString string) {
+
+	key, _ := hex.DecodeString(keyString)
+	enc, _ := hex.DecodeString(encryptedString)
+
+	//Create a new Cipher Block from the key
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		panic(err.Error())
+	}
+
+	//Create a new GCM
+	aesGCM, err := cipher.NewGCM(block)
+	if err != nil {
+		panic(err.Error())
+	}
+
+	//Get the nonce size
+	nonceSize := aesGCM.NonceSize()
+
+	//Extract the nonce from the encrypted data
+	nonce, ciphertext := enc[:nonceSize], enc[nonceSize:]
+
+	//Decrypt the data
+	plaintext, err := aesGCM.Open(nil, nonce, ciphertext, nil)
+	if err != nil {
+		panic(err.Error())
+	}
+
+	return fmt.Sprintf("%s", plaintext)
 }
