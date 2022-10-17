@@ -208,7 +208,6 @@ func readKeychain(file string) *Keychain {
 			var k Key
 			name := string(f[0])
 			k.digits = int(f[1][0] - '0')
-			getPassword()
 			raw, err := decodeKey(decrypt(string(f[2]), passKey))
 			if err == nil {
 				k.raw = raw
