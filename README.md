@@ -1,5 +1,14 @@
 2fa is a two-factor authentication agent.
 
+This repo was forked from [rsc/2fa](https://github.com/rsc/2fa) and adds key 
+encryption along with adding time remaining to output.
+
+```bash
+$ 2fa github
+Enter Password: 
+    268346 - 30 second(s) left
+$
+```
 Usage:
 
     go get -u rsc.io/2fa
