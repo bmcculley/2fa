@@ -333,7 +333,13 @@ func (c *Keychain) show(name string) {
 	if *flagClip {
 		clipboard.WriteAll(code)
 	}
-	fmt.Printf("%10s - %02d second(s) left\n", code, secondLeft)
+	if secondLeft == 1 {
+		fmt.Printf("%10s - %01d second left\n", code, secondLeft)
+	} else if secondLeft < 10 {
+		fmt.Printf("%10s - %01d seconds left\n", code, secondLeft)
+	} else {
+		fmt.Printf("%10s - %02d seconds left\n", code, secondLeft)
+	}
 }
 
 func (c *Keychain) showAll() {
