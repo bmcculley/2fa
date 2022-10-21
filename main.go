@@ -83,6 +83,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 	"unicode"
 
@@ -164,7 +165,7 @@ const counterLen = 20
 func getPassword() {
 
 	fmt.Print("Enter Password: ")
-	bytePassword, err := terminal.ReadPassword(0)
+	bytePassword, err := terminal.ReadPassword(int(syscall.Stdin))
 	if err != nil {
 		fmt.Println("\nCouldn't get password")
 	}
