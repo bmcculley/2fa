@@ -11,7 +11,7 @@ $
 ```
 Usage:
 
-    go get -u rsc.io/2fa
+    go get -u pkg.cld19.com/2fa
 
     2fa -add [-7] [-8] [-hotp] name
     2fa -list

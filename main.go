@@ -35,7 +35,7 @@
 //
 // The keychain is stored unencrypted in the text file $HOME/.2fa.
 //
-// Example
+// # Example
 //
 // During GitHub 2FA setup, at the “Scan this barcode with your app” step,
 // click the “enter this text code instead” link. A window pops up showing
@@ -58,7 +58,6 @@
 //	$ 2fa
 //	268346	github
 //	$
-//
 package main
 
 import (
@@ -98,7 +97,6 @@ var (
 	flag7    = flag.Bool("7", false, "generate 7-digit code")
 	flag8    = flag.Bool("8", false, "generate 8-digit code")
 	flagClip = flag.Bool("clip", false, "copy code to the clipboard")
-	passKey  string
 )
 
 func usage() {
@@ -162,27 +160,24 @@ type Key struct {
 
 const counterLen = 20
 
-func getPassword() {
-
+func getPassword() ([]uint8, error) {
 	fmt.Print("Enter Password: ")
 	bytePassword, err := terminal.ReadPassword(int(syscall.Stdin))
 	if err != nil {
-		fmt.Println("\nCouldn't get password")
+		return []uint8{}, err
 	}
-	password := string(bytePassword)
-
 	byteArray := make([]byte, 32)
-
-	s := sha256.Sum256([]byte(password))
-
+	s := sha256.Sum256(bytePassword)
 	copy(byteArray, s[:])
-
-	passKey = hex.EncodeToString(byteArray)
 	fmt.Println("")
+	return byteArray, nil
 }
 
 func readKeychain(file string) *Keychain {
-	getPassword()
+	passKey, err := getPassword()
+	if err != nil {
+		log.Fatalf("error getting password: %v", err)
+	}
 	c := &Keychain{
 		file: file,
 		keys: make(map[string]Key),
@@ -254,6 +249,10 @@ func noSpace(r rune) rune {
 }
 
 func (c *Keychain) add(name string) {
+	passKey, err := getPassword()
+	if err != nil {
+		log.Fatalf("error getting password: %v", err)
+	}
 	size := 6
 	if *flag7 {
 		size = 7
@@ -391,65 +390,43 @@ func totp(key []byte, t time.Time, digits int) int {
 	return hotp(key, uint64(t.UnixNano())/30e9, digits)
 }
 
-func encrypt(stringToEncrypt string, keyString string) (encryptedString string) {
-
-	//Since the key is in string, we need to convert decode it to bytes
-	key, _ := hex.DecodeString(keyString)
+func encrypt(stringToEncrypt string, key []uint8) string {
 	plaintext := []byte(stringToEncrypt)
-
-	//Create a new Cipher Block from the key
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		panic(err.Error())
+		log.Fatalf("error creating cipher block %v", err)
 	}
-
-	//Create a new GCM - https://en.wikipedia.org/wiki/Galois/Counter_Mode
-	//https://golang.org/pkg/crypto/cipher/#NewGCM
 	aesGCM, err := cipher.NewGCM(block)
 	if err != nil {
-		panic(err.Error())
+		log.Fatalf("error creating GCM %v", err)
 	}
-
-	//Create a nonce. Nonce should be from GCM
 	nonce := make([]byte, aesGCM.NonceSize())
 	if _, err = io.ReadFull(rand.Reader, nonce); err != nil {
-		panic(err.Error())
+		log.Fatalf("error creating nonce %v", err)
 	}
-
-	//Encrypt the data using aesGCM.Seal
-	//Since we don't want to save the nonce somewhere else in this case, we add it as a prefix to the encrypted data. The first nonce argument in Seal is the prefix.
 	ciphertext := aesGCM.Seal(nonce, nonce, plaintext, nil)
 	return fmt.Sprintf("%x", ciphertext)
 }
 
-func decrypt(encryptedString string, keyString string) (decryptedString string) {
+func decrypt(encryptedString string, key []uint8) string {
 
-	key, _ := hex.DecodeString(keyString)
-	enc, _ := hex.DecodeString(encryptedString)
-
-	//Create a new Cipher Block from the key
+	enc, err := hex.DecodeString(encryptedString)
+	if err != nil {
+		log.Fatalf("error reading encrypted key: %v", err)
+	}
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		panic(err.Error())
+		log.Fatalf("error creating cipher block %v", err)
 	}
-
-	//Create a new GCM
 	aesGCM, err := cipher.NewGCM(block)
 	if err != nil {
-		panic(err.Error())
+		log.Fatalf("error creating GCM %v", err)
 	}
-
-	//Get the nonce size
 	nonceSize := aesGCM.NonceSize()
-
-	//Extract the nonce from the encrypted data
 	nonce, ciphertext := enc[:nonceSize], enc[nonceSize:]
-
-	//Decrypt the data
 	plaintext, err := aesGCM.Open(nil, nonce, ciphertext, nil)
 	if err != nil {
-		panic(err.Error())
+		log.Fatalf("error decrypting key %v", err)
 	}
-
 	return fmt.Sprintf("%s", plaintext)
 }
