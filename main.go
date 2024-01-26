@@ -97,6 +97,7 @@ var (
 	flag7    = flag.Bool("7", false, "generate 7-digit code")
 	flag8    = flag.Bool("8", false, "generate 8-digit code")
 	flagClip = flag.Bool("clip", false, "copy code to the clipboard")
+	passKey []uint8
 )
 
 func usage() {
@@ -112,6 +113,13 @@ func main() {
 	log.SetFlags(0)
 	flag.Usage = usage
 	flag.Parse()
+
+	var err error
+	
+	passKey, err = getPassword()
+	if err != nil {
+		log.Fatalf("error getting password: %v", err)
+	}
 
 	k := readKeychain(filepath.Join(os.Getenv("HOME"), ".2fa"))
 
@@ -174,10 +182,6 @@ func getPassword() ([]uint8, error) {
 }
 
 func readKeychain(file string) *Keychain {
-	passKey, err := getPassword()
-	if err != nil {
-		log.Fatalf("error getting password: %v", err)
-	}
 	c := &Keychain{
 		file: file,
 		keys: make(map[string]Key),
@@ -249,10 +253,6 @@ func noSpace(r rune) rune {
 }
 
 func (c *Keychain) add(name string) {
-	passKey, err := getPassword()
-	if err != nil {
-		log.Fatalf("error getting password: %v", err)
-	}
 	size := 6
 	if *flag7 {
 		size = 7
